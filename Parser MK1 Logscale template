@@ -1,0 +1,68 @@
+name: MK1
+fieldsToBeRemovedBeforeParsing: []
+testCases:
+- event:
+    rawString: '{"@collect.id":"123456789azerty","#repo":"Firewall_Anyconnect","@collect.source_type":"file","@collect.source_name":"az_123","@timezone":"+01:00","#humioAutoShard":"1","@collect.timestamp":"0011xxxxxxx","@rawstring":"20xx-xx-xxTxx:xx:xx.xxxxx+01:00
+      172.0.0.0 %ABC-6-00110: Device requesting certificate from SSL client Outside:172.0.0.1/6969
+      to 172.0.0.2/420 for authentication","@id":"thisismyid","@timestamp":1742389414600,"@ingesttimestamp":"1742389415028","@collect.timezone":"CET","#type":"kv","@collect.host":"HOSTMAN-man","@timestamp.nanos":"413000","@collect.file":"/var/log/network/thisisalogfile.log"}'
+$schema: https://schemas.humio.com/parser/v0.3.0
+script: |-
+  // Parse the JSON structure first
+
+  | parseJson(field=@rawstring)
+
+  // Extract timestamp (using UTC as specified in rules)
+
+  | @timestamp := findTimestamp(timezone="UTC", field="@timestamp")
+
+  // Set standard CPS fields
+
+  | Parser.version := "1.0.0"
+  | Vendor := "cisco"
+  | ecs.version := "8.11.0"
+  | Cps.version := "1.0.0"
+  | event.module := "ios"
+
+  // Parse the raw message using regex
+
+  | regex("^(?<ts>\S+) (?<device_ip>\S+) %(?<facility>\w+)-(?<severity>\d+)-(?<message_id>\d+): (?<message>.*?) Outside:(?<source_ip>[^/]+)/(?<source_port>\d+) to (?<dest_ip>[^/]+)/(?<dest_port>\d+).*$", field=@rawstring)
+
+  // Set ECS categorization fields
+
+  | event.kind := "event"
+  | event.category[0] := "network"
+  | event.type[0] := "connection"
+  | event.type[1] := "info"
+
+  // Map network-related fields
+
+  | source.ip := source_ip
+  | source.port := source_port
+  | destination.ip := dest_ip
+  | destination.port := dest_port
+
+  // Map event details
+
+  | event.severity := severity
+  | message := message
+
+  // Observer (firewall) details
+
+  | observer.ip := device_ip
+  | observer.type := "firewall"
+
+  // Store vendor-specific fields
+
+  | vendor.facility := facility
+  | vendor.message_id := message_id
+  | vendor.collect_id := rename(@collect.id)
+  | vendor.collect_source_type := rename(@collect.source_type)
+  | vendor.collect_source_name := rename(@collect.source_name)
+  | vendor.collect_host := rename(@collect.host)
+  | vendor.collect_file := rename(@collect.file)
+
+  // Network protocol and direction info
+
+  | network.direction := "outbound"
+  | network.type := "ipv4"
+tagFields: []
